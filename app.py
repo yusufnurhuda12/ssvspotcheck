@@ -8,15 +8,26 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    # CARA ANTI-GAGAL: Langsung baca file index.html dari root
-    # Ini akan mencari index.html yang posisinya sejajar dengan app.py
+    # Dapatkan lokasi absolut folder tempat app.py ini berada
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Buat jalur pasti ke file index.html (baik di luar maupun di dalam folder templates)
+    root_path = os.path.join(base_dir, 'index.html')
+    template_path = os.path.join(base_dir, 'templates', 'index.html')
+    
     try:
-        with open('index.html', 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        # Cadangan jika ternyata index.html ditaruh di dalam folder templates
-        with open('templates/index.html', 'r', encoding='utf-8') as f:
-            return f.read()
+        # Coba cari index.html di luar (sejajar dengan app.py)
+        if os.path.exists(root_path):
+            with open(root_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        # Jika tidak ada, coba cari di dalam folder templates
+        elif os.path.exists(template_path):
+            with open(template_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        else:
+            return f"Error: Tidak bisa menemukan file index.html di {root_path} maupun {template_path}"
+    except Exception as e:
+        return f"Server Error: {str(e)}"
 
 @app.route('/generate', methods=['POST'])
 def generate_kmz():
@@ -74,7 +85,6 @@ def generate_kmz():
             continue # Skip invalid coordinate rows
 
         # Handle merged cells by forward-filling missing data
-        # Assuming typical column order: Scenario (0), Distance (1), Target (2), Sector (3)
         scenario = row[0].strip() if len(row) > 0 and row[0].strip() else last_scenario
         distance = row[1].strip() if len(row) > 1 and row[1].strip() else last_distance
         target = row[2].strip() if len(row) > 2 and row[2].strip() else last_target
@@ -106,6 +116,5 @@ def generate_kmz():
         download_name='pinpoints.kmz'
     )
 
-# Required by Vercel
 if __name__ == '__main__':
     app.run(debug=False)
