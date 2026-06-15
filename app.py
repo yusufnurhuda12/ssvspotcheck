@@ -13,16 +13,14 @@ def index():
     # Dapatkan lokasi absolut folder tempat app.py ini berada
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Buat jalur pasti ke file index.html (baik di luar maupun di dalam folder templates)
+    # Buat jalur pasti ke file index.html
     root_path = os.path.join(base_dir, 'index.html')
     template_path = os.path.join(base_dir, 'templates', 'index.html')
     
     try:
-        # Coba cari index.html di luar (sejajar dengan app.py)
         if os.path.exists(root_path):
             with open(root_path, 'r', encoding='utf-8') as f:
                 return f.read()
-        # Jika tidak ada, coba cari di dalam folder templates
         elif os.path.exists(template_path):
             with open(template_path, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -37,49 +35,19 @@ def generate():
     if not text_data.strip():
         return "No data provided", 400
 
-    lines = text_data.strip().split('\n')
-    if not lines:
-        return "No data provided", 400
-        
-    # Reconstruct rows broken by multiline cells when pasted as plain text
-    max_tabs = max(line.count('\t') for line in lines)
-    
-    reconstructed_lines = []
-    current_line = ""
-
-    # Skip initial lines with 0 tabs to remove garbage like "TEST INFORMATION"
-    start_idx = 0
-    while start_idx < len(lines) and lines[start_idx].count('\t') == 0:
-        start_idx += 1
-
-    for line in lines[start_idx:]:
-        line = line.strip('\r')
-        if current_line:
-            if current_line.count('\t') + line.count('\t') <= max_tabs:
-                current_line += " " + line
-            else:
-                reconstructed_lines.append(current_line)
-                current_line = line
-        else:
-            current_line = line
-            
-    if current_line:
-        reconstructed_lines.append(current_line)
-
-    # Now use csv.reader to parse the reconstructed lines
-    reader = csv.reader(reconstructed_lines, delimiter='\t')
+    # Gunakan csv.reader asli bawaan Python yang pintar meng-handle multiline cell dari Excel
+    reader = csv.reader(io.StringIO(text_data.strip()), delimiter='\t')
     rows = list(reader)
 
-    if len(rows) < 1:
-        return "Not enough data provided", 400
+    if not rows:
+        return "No data provided", 400
 
-    # Find the header row by looking for Latitude and Longitude columns dynamically
-    # Look through the first 5 rows in case there are title rows like "TEST INFORMATION"
+    # Cari baris judul (header) secara dinamis sampai maksimal 10 baris ke bawah
     header_idx = -1
     lat_col = -1
     lon_col = -1
     
-    for i, row in enumerate(rows[:5]):
+    for i, row in enumerate(rows[:10]):
         cleaned_row = [str(col).strip().lower() for col in row]
         temp_lat = -1
         temp_lon = -1
@@ -96,24 +64,27 @@ def generate():
             break
 
     if header_idx == -1 or lat_col == -1 or lon_col == -1:
-        return 'Error: Could not find Latitude and/or Longitude columns. Please ensure you copied the table headers.', 400
+        return 'Error: Could not find Latitude and/or Longitude columns. Pastikan baris nama kolom (Latitude/Longitude) ikut di-copy ya.', 400
 
-    headers = [h.replace('\n', ' ').strip() for h in rows[header_idx]]
+    headers = [str(h).replace('\n', ' ').strip() for h in rows[header_idx]]
     kml = simplekml.Kml()
     last_values = {}
 
-    # Process data rows starting AFTER the header row
+    # Proses data mulai dari baris di bawah header
     for row_idx, row in enumerate(rows[header_idx + 1:], start=1):
-        # Extend row if it's shorter than headers
+        if not row:
+            continue
+            
+        # Perpanjang row jika lebih pendek dari headers
         while len(row) < len(headers):
             row.append('')
 
         row_data = {}
         for i, h in enumerate(headers):
-            val = row[i].strip()
+            val = str(row[i]).strip()
             
-            # Carry forward values for the first 3 columns (Scenario, Distance, Target) 
-            # if they are empty, assuming merged cells in Excel
+            # Bawa nilai dari baris sebelumnya untuk 3 kolom pertama (Scenario, dsb)
+            # Ini sangat berguna jika ada Merge Cell di Excel
             if not val and i < 3:
                 val = last_values.get(h, '')
             else:
@@ -121,25 +92,26 @@ def generate():
                 
             row_data[h] = val
 
-        lat_str = row_data[headers[lat_col]]
-        lon_str = row_data[headers[lon_col]]
+        # Ambil Latitude dan Longitude dengan aman
+        lat_str = row_data.get(headers[lat_col], '')
+        lon_str = row_data.get(headers[lon_col], '')
 
         if not lat_str or not lon_str:
-            continue # Skip rows without coordinates
+            continue # Lewati jika kosong
         
         try:
             lat = float(lat_str.replace(',', '.'))
             lon = float(lon_str.replace(',', '.'))
         except ValueError:
-            continue # Skip invalid coordinates
+            continue # Lewati jika bukan angka koordinat yang valid
 
-        # Create description as HTML table
+        # Buat tampilan deskripsi tabel HTML saat pin di-klik
         desc_html = '<table border="1" style="border-collapse: collapse;">'
         for k, v in row_data.items():
             desc_html += f'<tr><th style="padding: 5px; text-align: left;">{k}</th><td style="padding: 5px;">{v}</td></tr>'
         desc_html += '</table>'
 
-        # Dynamically set name based on Scenario and Sector
+        # Penamaan Pin Point otomatis
         scenario = row_data.get(headers[0], '').strip()
         sector_val = ""
         for h in headers:
@@ -158,12 +130,12 @@ def generate():
         else:
             name = f"Point {row_idx}"
 
-        pnt = kml.newpoint(name=name, coords=[(lon, lat)]) # simplekml expects (lon, lat)
+        # Buat Pin
+        pnt = kml.newpoint(name=name, coords=[(lon, lat)]) 
         pnt.description = desc_html
-        
         pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png'
 
-    # Save to memory and send
+    # Simpan KMZ dan kirim
     kmz_io = io.BytesIO()
     kml.savekmz(kmz_io)
     kmz_io.seek(0)
