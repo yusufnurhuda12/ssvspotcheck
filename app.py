@@ -1,163 +1,111 @@
 import os
 import csv
 import io
-from flask import Flask, render_template, request, send_file
+from flask import Flask, request, send_file
 import simplekml
 
-# Explicitly define template folder path for Vercel
-template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates'))
-app = Flask(__name__, template_folder=template_dir)
-
+app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # CARA ANTI-GAGAL: Langsung baca file index.html dari root
+    # Ini akan mencari index.html yang posisinya sejajar dengan app.py
+    try:
+        with open('index.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        # Cadangan jika ternyata index.html ditaruh di dalam folder templates
+        with open('templates/index.html', 'r', encoding='utf-8') as f:
+            return f.read()
 
 @app.route('/generate', methods=['POST'])
-def generate():
-    text_data = request.form.get('data', '')
-    if not text_data.strip():
-        return "No data provided", 400
+def generate_kmz():
+    if 'data' not in request.form:
+        return 'No data provided', 400
 
-    lines = text_data.strip().split('\n')
-    if not lines:
-        return "No data provided", 400
-        
-    # Reconstruct rows broken by multiline cells when pasted as plain text
-    max_tabs = max(line.count('\t') for line in lines)
+    text_data = request.form['data']
     
-    reconstructed_lines = []
-    current_line = ""
-
-    # Skip initial lines with 0 tabs to remove garbage like "TEST INFORMATION"
-    start_idx = 0
-    while start_idx < len(lines) and lines[start_idx].count('\t') == 0:
-        start_idx += 1
-
-    for line in lines[start_idx:]:
-        line = line.strip('\r')
-        if current_line:
-            if current_line.count('\t') + line.count('\t') <= max_tabs:
-                current_line += " " + line
-            else:
-                reconstructed_lines.append(current_line)
-                current_line = line
-        else:
-            current_line = line
-            
-    if current_line:
-        reconstructed_lines.append(current_line)
-
-    # Now use csv.reader to parse the reconstructed lines
-    reader = csv.reader(reconstructed_lines, delimiter='\t')
+    # Read TSV data
+    reader = csv.reader(io.StringIO(text_data), delimiter='\t')
     rows = list(reader)
 
-    if len(rows) < 1:
-        return "Not enough data provided", 400
+    if not rows:
+        return 'Data is empty', 400
 
-    # Find the header row by looking for Latitude and Longitude columns
-    lat_col = None
-    lon_col = None
-    header_row_idx = -1
-    headers = []
+    # Parse header to find Latitude and Longitude columns
+    header = rows[0]
+    lat_idx = -1
+    lon_idx = -1
+    
+    # Clean and find indices
+    cleaned_header = [col.strip().lower() for col in header]
+    for i, col_name in enumerate(cleaned_header):
+        if 'latitude' in col_name or col_name == 'lat':
+            lat_idx = i
+        elif 'longitude' in col_name or col_name == 'long' or col_name == 'lon':
+            lon_idx = i
 
-    for idx, row in enumerate(rows):
-        temp_headers = [h.replace('\n', ' ').strip() for h in row]
-        t_lat = None
-        t_lon = None
-        for i, h in enumerate(temp_headers):
-            h_lower = h.lower()
-            if 'lat' in h_lower:
-                t_lat = i
-            if 'lon' in h_lower or 'lng' in h_lower:
-                t_lon = i
-        
-        if t_lat is not None and t_lon is not None:
-            lat_col = t_lat
-            lon_col = t_lon
-            header_row_idx = idx
-            headers = temp_headers
-            break
-
-    if header_row_idx == -1:
-        return "Could not find Latitude and/or Longitude columns. Please ensure they are present.", 400
+    if lat_idx == -1 or lon_idx == -1:
+        return 'Error: Could not find Latitude and/or Longitude columns. Please ensure they are present in the headers.', 400
 
     kml = simplekml.Kml()
-    last_values = {}
+    
+    # Variables to track the last seen valid values for merging/forward-filling
+    last_scenario = ""
+    last_distance = ""
+    last_target = ""
 
-    for row_idx, row in enumerate(rows[header_row_idx + 1:], start=1):
-        # Extend row if it's shorter than headers
-        while len(row) < len(headers):
-            row.append('')
-
-        row_data = {}
-        for i, h in enumerate(headers):
-            val = row[i].strip()
+    # Process data rows
+    for row in rows[1:]:
+        if not row or len(row) <= max(lat_idx, lon_idx):
+            continue
             
-            # Carry forward values for the first 3 columns (Scenario, Distance, Target) 
-            # if they are empty, assuming merged cells in Excel
-            if not val and i < 3:
-                val = last_values.get(h, '')
-            else:
-                last_values[h] = val
-                
-            row_data[h] = val
-
-        lat_str = row_data[headers[lat_col]]
-        lon_str = row_data[headers[lon_col]]
-
+        # Get coordinates, replacing commas with dots for float conversion
+        lat_str = row[lat_idx].replace(',', '.').strip()
+        lon_str = row[lon_idx].replace(',', '.').strip()
+        
         if not lat_str or not lon_str:
-            continue # Skip rows without coordinates
-        
-        try:
-            lat = float(lat_str.replace(',', '.'))
-            lon = float(lon_str.replace(',', '.'))
-        except ValueError:
-            continue # Skip invalid coordinates
-
-        # Create description as HTML table
-        desc_html = '<table border="1" style="border-collapse: collapse;">'
-        for k, v in row_data.items():
-            desc_html += f'<tr><th style="padding: 5px; text-align: left;">{k}</th><td style="padding: 5px;">{v}</td></tr>'
-        desc_html += '</table>'
-
-        # Dynamically set name based on Scenario and Sector
-        scenario = row_data.get(headers[0], '').strip()
-        sector_val = ""
-        for h in headers:
-            if 'sector' in h.lower():
-                sector_val = row_data.get(h, '').strip()
-                break
-                
-        name_parts = []
-        if scenario:
-            name_parts.append(scenario)
-        if sector_val:
-            name_parts.append(f"Sector {sector_val}")
+            continue
             
-        if name_parts:
-            name = " ".join(name_parts)
-        else:
-            name = f"Point {row_idx}"
+        try:
+            lat = float(lat_str)
+            lon = float(lon_str)
+        except ValueError:
+            continue # Skip invalid coordinate rows
 
-        pnt = kml.newpoint(name=name, coords=[(lon, lat)]) # simplekml expects (lon, lat)
-        pnt.description = desc_html
+        # Handle merged cells by forward-filling missing data
+        # Assuming typical column order: Scenario (0), Distance (1), Target (2), Sector (3)
+        scenario = row[0].strip() if len(row) > 0 and row[0].strip() else last_scenario
+        distance = row[1].strip() if len(row) > 1 and row[1].strip() else last_distance
+        target = row[2].strip() if len(row) > 2 and row[2].strip() else last_target
+        sector = row[3].strip() if len(row) > 3 else ""
         
-        # We could customize the pin style here
-        pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png'
+        # Update last seen values
+        last_scenario = scenario
+        last_distance = distance
+        last_target = target
 
-    # Save to KMZ and send
-    # Generate temporary file path
-    kmz_path = "output.kmz"
-    kml.savekmz(kmz_path)
+        # Construct pinpoint name
+        point_name = f"{scenario} Sector {sector}" if sector else scenario
+        
+        # Construct description
+        description = f"Distance to BTS: {distance}\nTarget: {target}"
+        
+        # Create pinpoint
+        pnt = kml.newpoint(name=point_name, description=description, coords=[(lon, lat)])
+
+    # Save to memory and send
+    kmz_io = io.BytesIO()
+    kml.savekmz(kmz_io)
+    kmz_io.seek(0)
     
     return send_file(
-        kmz_path,
+        kmz_io,
+        mimetype='application/vnd.google-earth.kmz',
         as_attachment=True,
-        download_name='pinpoints.kmz',
-        mimetype='application/vnd.google-earth.kmz'
+        download_name='pinpoints.kmz'
     )
 
+# Required by Vercel
 if __name__ == '__main__':
-    # Start the application
-    app.run(debug=True, host='127.0.0.1', port=5000)
+    app.run(debug=False)
