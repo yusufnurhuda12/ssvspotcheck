@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KMZ Generator | Transform Your Data</title>
+    <meta name="description" content="Instantly convert your tabular data containing coordinates into KMZ files for Google Earth mapping.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #030712;
+            --surface-color: #111827;
+            --primary-color: #4f46e5;
+            --primary-hover: #4338ca;
+            --accent-color: #06b6d4;
+            --text-primary: #f9fafb;
+            --text-secondary: #9ca3af;
+            --border-color: #1f2937;
+            --glow-color: rgba(79, 70, 229, 0.15);
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at top right, rgba(79, 70, 229, 0.1), transparent 40%),
+                radial-gradient(circle at bottom left, rgba(6, 182, 212, 0.1), transparent 40%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            background-color: rgba(17, 24, 39, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 3.5rem;
+            width: 100%;
+            max-width: 850px;
+            box-shadow: 0 0 40px var(--glow-color), inset 0 1px 0 rgba(255,255,255,0.05);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s ease;
+            margin: 2rem;
+            box-sizing: border-box;
+        }
+
+        .container:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 0 60px rgba(79, 70, 229, 0.25), inset 0 1px 0 rgba(255,255,255,0.05);
+        }
+
+        h1 {
+            font-size: 2.8rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #818cf8, #22d3ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            letter-spacing: -1px;
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: var(--text-secondary);
+            margin-bottom: 2.5rem;
+            font-size: 1.15rem;
+            font-weight: 300;
+        }
+
+        .form-group {
+            margin-bottom: 2rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.8rem;
+            font-weight: 500;
+            color: #d1d5db;
+            font-size: 1.05rem;
+        }
+
+        input[type="text"], textarea {
+            width: 100%;
+            background-color: #000000;
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.2rem;
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        input[type="text"] {
+            font-family: 'Outfit', sans-serif;
+            margin-bottom: 0.5rem;
+        }
+
+        textarea {
+            height: 220px;
+            font-family: 'Courier New', Courier, monospace;
+            resize: vertical;
+            line-height: 1.5;
+        }
+
+        input[type="text"]:focus, textarea:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15), inset 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        input[type="text"]::placeholder, textarea::placeholder {
+            color: #4b5563;
+        }
+
+        button {
+            display: block;
+            width: 100%;
+            background: linear-gradient(135deg, var(--primary-color), #3b82f6);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 1.2rem;
+            border-radius: 16px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            font-family: 'Outfit', sans-serif;
+            letter-spacing: 0.5px;
+            box-shadow: 0 10px 20px -10px rgba(79, 70, 229, 0.5);
+        }
+
+        button::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px) scale(1.01);
+            box-shadow: 0 15px 25px -10px rgba(79, 70, 229, 0.6);
+            background: linear-gradient(135deg, var(--primary-hover), #2563eb);
+        }
+
+        button:hover::after {
+            left: 100%;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        .status {
+            margin-top: 1.5rem;
+            text-align: center;
+            font-weight: 500;
+            min-height: 1.5rem;
+            transition: color 0.3s ease;
+            font-size: 1.1rem;
+        }
+
+        .status.error { color: #f87171; }
+        .status.success { color: #34d399; }
+
+        /* Instructions Section */
+        .instructions {
+            margin-top: 3rem;
+            padding: 2.5rem;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .instructions::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(to bottom, #818cf8, #22d3ee);
+        }
+
+        .instructions h3 {
+            margin-top: 0;
+            color: var(--text-primary);
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        .instructions ul {
+            padding-left: 1.5rem;
+            color: var(--text-secondary);
+            margin-bottom: 0;
+            line-height: 1.6;
+        }
+
+        .instructions li {
+            margin-bottom: 0.8rem;
+        }
+
+        .instructions li strong {
+            color: #e5e7eb;
+        }
+
+        /* Example Table Styles - Classic Excel Look */
+        .example-table-wrapper {
+            position: relative;
+            overflow-x: auto;
+            border-radius: 4px;
+            margin: 1rem 0;
+            background-color: white;
+        }
+
+        .example-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            color: #334155;
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+
+        .example-table th, .example-table td {
+            border: 1px solid #94a3b8;
+            padding: 6px 4px;
+        }
+        
+        .selection-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(59, 130, 246, 0.15);
+            border: 2px dashed #3b82f6;
+            pointer-events: none;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 0.8; }
+            100% { opacity: 0.4; }
+        }
+        
+        /* Modal Styles Tune-up */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-content {
+            background-color: #09090b;
+            border: 1px solid #27272a;
+            border-radius: 24px;
+            padding: 3rem;
+            width: 90%;
+            max-width: 480px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255,255,255,0.05);
+            transform: translateY(30px) scale(0.95);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: translateY(0) scale(1);
+        }
+
+        .modal-title {
+            font-size: 1.8rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #fff, #a1a1aa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .modal-subtitle {
+            color: #a1a1aa;
+            margin-bottom: 2rem;
+            font-size: 1rem;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .btn-cancel {
+            background: transparent;
+            border: 1px solid #3f3f46;
+            color: #e4e4e7;
+            box-shadow: none;
+        }
+
+        .btn-cancel:hover {
+            background-color: #27272a;
+            border-color: #52525b;
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        
+        .btn-cancel::after {
+            display: none;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>KMZ Generator</h1>
+        <p class="subtitle">Instantly convert spreadsheet data into Google Earth pinpoints.</p>
+
+        <form id="kmzForm">
+            <div class="form-group">
+                <label for="dataInput">Paste your spreadsheet data here (Excel/Sheets):</label>
+                <textarea id="dataInput" placeholder="Scenario    Distance to BTS (mtr)    Target (Mbps)    Sector    Position    Test Location Category    Latitude    Longitude...&#10;Scenario 1    50-150    DL 315    1    Outdoor    high dense residential    -7.6194    109.0193"></textarea>
+            </div>
+            <button type="submit" id="submitBtn">Generate & Download KMZ</button>
+            <div id="statusMessage" class="status"></div>
+        </form>
+
+        <div class="instructions">
+            <h3>How it works:</h3>
+            <p style="margin-bottom: 1rem; font-size: 1.1rem; color: var(--text-primary);"><strong>Just copy paste all!</strong> Contoh tabel dari Excel/Spreadsheet yang bisa langsung Anda copy:</p>
+            
+            <div class="example-table-wrapper">
+                <table class="example-table">
+                    <thead>
+                        <tr>
+                            <th colspan="8" style="background-color: #157999; color: white; font-size: 1.1rem; padding: 10px; border: 1px solid #0f5c75;">TEST INFORMATION</th>
+                        </tr>
+                        <tr style="background-color: #cbe6f2; color: #1e293b;">
+                            <th>Scenario</th>
+                            <th>Distance<br>to BTS (mtr)</th>
+                            <th>Target<br>(Mbps)</th>
+                            <th>Sector</th>
+                            <th>Position</th>
+                            <th>Test Location Category</th>
+                            <th>Latitude</th>
+                            <th>Longitude</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td rowspan="3" style="font-weight: 700;">Scenario 1</td>
+                            <td rowspan="3" style="font-weight: 700;">50-150</td>
+                            <td rowspan="3" style="font-weight: 700;">DL 315</td>
+                            <td>1</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6,8622</td>
+                            <td>109,1379</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6,8638</td>
+                            <td>109,1375</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6,8626</td>
+                            <td>109,1364</td>
+                        </tr>
+                        <tr>
+                            <td rowspan="3" style="font-weight: 700;">Scenario 2</td>
+                            <td rowspan="3" style="font-weight: 700;">250-350</td>
+                            <td rowspan="3" style="font-weight: 700;">DL 150</td>
+                            <td>1</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6,8609</td>
+                            <td>109,1392</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6,8654</td>
+                            <td>109,1379</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6,8621</td>
+                            <td>109,1344</td>
+                        </tr>
+                        <tr>
+                            <td rowspan="3" style="font-weight: 700;">Scenario 3</td>
+                            <td rowspan="3" style="font-weight: 700;">400-500</td>
+                            <td rowspan="3" style="font-weight: 700;">DL 50</td>
+                            <td>1</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6,8597</td>
+                            <td>109,1404</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6.8672</td>
+                            <td>109,1384</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>Outdoor</td>
+                            <td>high dense residential</td>
+                            <td>-6,8616</td>
+                            <td>109,1329</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="selection-overlay"></div>
+            </div>
+
+            <ul style="margin-top: 1.5rem;">
+                <li>Blok seluruh data di tabel Anda (seperti area biru putus-putus di atas).</li>
+                <li>Tekan <strong>Ctrl+C</strong> (Copy) lalu <strong>Ctrl+V</strong> (Paste) ke kotak input di atas.</li>
+                <li>Sistem kami otomatis membaca sel yang di-merge (seperti Scenario) & mengatur format koma/titik.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Custom Modal -->
+    <div class="modal-overlay" id="siteModal">
+        <div class="modal-content">
+            <div class="modal-title">Masukkan Site ID</div>
+            <div class="modal-subtitle">Nama ini akan dipakai sebagai nama file KMZ yang diunduh.</div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <input type="text" id="modalSiteIdInput" placeholder="Contoh: BDO123" autocomplete="off">
+            </div>
+            <div class="modal-buttons">
+                <button type="button" class="btn-cancel" id="cancelModalBtn">Batal</button>
+                <button type="button" id="confirmModalBtn">Download KMZ</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const modal = document.getElementById('siteModal');
+        const modalInput = document.getElementById('modalSiteIdInput');
+        const cancelBtn = document.getElementById('cancelModalBtn');
+        const confirmBtn = document.getElementById('confirmModalBtn');
+        
+        let pendingTextData = '';
+
+        document.getElementById('kmzForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            pendingTextData = document.getElementById('dataInput').value;
+            const statusEl = document.getElementById('statusMessage');
+
+            if (!pendingTextData.trim()) {
+                statusEl.textContent = 'Please paste some data first.';
+                statusEl.className = 'status error';
+                return;
+            }
+
+            // Show custom modal
+            modal.classList.add('active');
+            modalInput.value = '';
+            modalInput.focus();
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+        });
+
+        confirmBtn.addEventListener('click', async () => {
+            modal.classList.remove('active');
+            
+            const siteIdValue = modalInput.value;
+            const statusEl = document.getElementById('statusMessage');
+            const btn = document.getElementById('submitBtn');
+
+            const safeFileName = siteIdValue.trim() ? `${siteIdValue.trim()}.kmz` : 'pinpoints.kmz';
+
+            statusEl.textContent = 'Generating...';
+            statusEl.className = 'status';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+
+            try {
+                const formData = new FormData();
+                formData.append('data', pendingTextData);
+
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    // Start download
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = downloadUrl;
+                    
+                    // Use the site ID for the filename
+                    a.download = safeFileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(downloadUrl);
+                    document.body.removeChild(a);
+
+                    statusEl.textContent = 'KMZ file generated successfully!';
+                    statusEl.className = 'status success';
+                } else {
+                    const errorText = await response.text();
+                    statusEl.textContent = 'Error: ' + errorText;
+                    statusEl.className = 'status error';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                statusEl.textContent = 'An unexpected error occurred.';
+                statusEl.className = 'status error';
+            } finally {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                // Clear success message after 5 seconds
+                if (statusEl.className === 'status success') {
+                    setTimeout(() => {
+                        if (statusEl.className === 'status success') {
+                            statusEl.textContent = '';
+                            statusEl.className = 'status';
+                        }
+                    }, 5000);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
