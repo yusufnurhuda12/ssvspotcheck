@@ -10,24 +10,7 @@ app = Flask(__name__, template_folder=template_dir)
 
 @app.route('/')
 def index():
-    # Dapatkan lokasi absolut folder tempat app.py ini berada
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Buat jalur pasti ke file index.html
-    root_path = os.path.join(base_dir, 'index.html')
-    template_path = os.path.join(base_dir, 'templates', 'index.html')
-    
-    try:
-        if os.path.exists(root_path):
-            with open(root_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        elif os.path.exists(template_path):
-            with open(template_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        else:
-            return f"Error: Tidak bisa menemukan file index.html di {root_path} maupun {template_path}"
-    except Exception as e:
-        return f"Server Error: {str(e)}"
+    return render_template('index.html')
 
 @app.route('/generate', methods=['POST'])
 def generate():
@@ -42,7 +25,8 @@ def generate():
     if not rows:
         return "No data provided", 400
 
-    # Cari baris judul (header) secara dinamis sampai maksimal 10 baris ke bawah
+    # Find the header row by looking for Latitude and Longitude columns dynamically
+    # Look through the first 10 rows in case there are title rows
     header_idx = -1
     lat_col = -1
     lon_col = -1
@@ -64,18 +48,18 @@ def generate():
             break
 
     if header_idx == -1 or lat_col == -1 or lon_col == -1:
-        return 'Error: Could not find Latitude and/or Longitude columns. Pastikan baris nama kolom (Latitude/Longitude) ikut di-copy ya.', 400
+        return 'Error: Could not find Latitude and/or Longitude columns. Please ensure you copied the table headers.', 400
 
     headers = [str(h).replace('\n', ' ').strip() for h in rows[header_idx]]
     kml = simplekml.Kml()
     last_values = {}
 
-    # Proses data mulai dari baris di bawah header
+    # Process data rows starting AFTER the header row
     for row_idx, row in enumerate(rows[header_idx + 1:], start=1):
         if not row:
             continue
             
-        # Perpanjang row jika lebih pendek dari headers
+        # Extend row if it's shorter than headers
         while len(row) < len(headers):
             row.append('')
 
@@ -83,8 +67,8 @@ def generate():
         for i, h in enumerate(headers):
             val = str(row[i]).strip()
             
-            # Bawa nilai dari baris sebelumnya untuk 3 kolom pertama (Scenario, dsb)
-            # Ini sangat berguna jika ada Merge Cell di Excel
+            # Carry forward values for the first 3 columns (Scenario, Distance, Target) 
+            # if they are empty, assuming merged cells in Excel
             if not val and i < 3:
                 val = last_values.get(h, '')
             else:
@@ -92,26 +76,25 @@ def generate():
                 
             row_data[h] = val
 
-        # Ambil Latitude dan Longitude dengan aman
         lat_str = row_data.get(headers[lat_col], '')
         lon_str = row_data.get(headers[lon_col], '')
 
         if not lat_str or not lon_str:
-            continue # Lewati jika kosong
+            continue # Skip rows without coordinates
         
         try:
             lat = float(lat_str.replace(',', '.'))
             lon = float(lon_str.replace(',', '.'))
         except ValueError:
-            continue # Lewati jika bukan angka koordinat yang valid
+            continue # Skip invalid coordinates
 
-        # Buat tampilan deskripsi tabel HTML saat pin di-klik
+        # Create description as HTML table
         desc_html = '<table border="1" style="border-collapse: collapse;">'
         for k, v in row_data.items():
             desc_html += f'<tr><th style="padding: 5px; text-align: left;">{k}</th><td style="padding: 5px;">{v}</td></tr>'
         desc_html += '</table>'
 
-        # Penamaan Pin Point otomatis
+        # Dynamically set name based on Scenario and Sector
         scenario = row_data.get(headers[0], '').strip()
         sector_val = ""
         for h in headers:
@@ -130,22 +113,26 @@ def generate():
         else:
             name = f"Point {row_idx}"
 
-        # Buat Pin
-        pnt = kml.newpoint(name=name, coords=[(lon, lat)]) 
+        pnt = kml.newpoint(name=name, coords=[(lon, lat)]) # simplekml expects (lon, lat)
         pnt.description = desc_html
+        
+        # We could customize the pin style here
         pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png'
 
-    # Simpan KMZ dan kirim
-    kmz_io = io.BytesIO()
-    kml.savekmz(kmz_io)
-    kmz_io.seek(0)
+    import tempfile
+    
+    # Generate temporary file path
+    temp_dir = tempfile.gettempdir()
+    kmz_path = os.path.join(temp_dir, "output.kmz")
+    kml.savekmz(kmz_path)
     
     return send_file(
-        kmz_io,
-        mimetype='application/vnd.google-earth.kmz',
+        kmz_path,
         as_attachment=True,
-        download_name='pinpoints.kmz'
+        download_name='pinpoints.kmz',
+        mimetype='application/vnd.google-earth.kmz'
     )
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    # Start the application
+    app.run(debug=True, host='127.0.0.1', port=5000)
